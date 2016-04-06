@@ -1,0 +1,247 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Parameters" : {
+		"Environment" : {
+			"Description" : "The environment to create. Possible values: DEV, STG, PRD",
+			"Type" : "String",
+			"MinLength" : "3",
+			"MaxLength" : "3",
+			"AllowedValues" : ["DEV", "STG", "PRD"]
+		},
+		
+		"PelicanDBPassword" : {
+			"Description" : "DB Master(root) Password for Pelican platform DB",
+			"Type" : "String",
+			"MinLength" : "8"
+		},
+		
+		"TriggersDBPassword" : {
+			"Description" : "DB Master(root) Password for Triggers workers DB",
+			"Type" : "String",
+			"MinLength" : "8"
+		},
+		
+		"LoggersDBPassword" : {
+			"Description" : "DB Master(root) Password for Loggers DB",
+			"Type" : "String",
+			"MinLength" : "8"
+		}
+		
+		
+
+	},
+
+	"Conditions" : {
+		"IsNotDev" : {"Fn::Not" : [{ "Fn::Equals" : [ {"Ref" : "Environment"}, "DEV" ]	}]}
+	},
+
+	"Mappings" : {
+		"EnvNameSmallCaseMap" : {
+			"DEV" : {
+				"Env" : "dev"
+			},
+			"STG" : {
+				"Env" : "stg"
+			},
+			"PRD" : {
+				"Env" : "prd"
+			}
+		},
+
+		"VPCIdsMaps" : {
+			"DEV" : {
+				"VPC" : "vpc-42479327"
+			},
+			"STG" : {
+				"VPC" : "vpc-f5439790"
+			},
+			"PRD" : {
+				"VPC" : "vpc-4a90752f"
+			}
+		},
+
+		"VPCIPRange" : {
+			"DEV" : {
+				"IP" : "10.37.54.0/24"
+			},
+			"STG" : {
+				"IP" : "10.37.55.0/24"
+			},
+			"PRD" : {
+				"IP" : "10.40.64.0/24"
+			}
+		},
+		
+		"ZoneMap" : {
+			"DEV" :  {
+				"ZONE" : "us-west-1b"
+			},
+			"STG" : {
+				"ZONE" : "us-west-1b"
+			},
+			"PRD" : {
+				"ZONE" : "us-east-1a"
+			}
+		},
+
+		"DBSubnetGroup" : {
+			"DEV" : {
+				"SUBNET" : "pelican-rds-subnet-group"
+			},
+			"STG" : {
+				"SUBNET" : "pelican-rds-subnet-group"
+			},
+			"PRD" : {
+				"SUBNET" : "prd-rds-subnet-group"
+			}
+		}
+
+	},
+
+	"Resources": {
+		"RDSSecurityGroup" : {
+  			"Type" : "AWS::EC2::SecurityGroup",
+			   "Properties" : {
+				       "GroupDescription" : "RDS Security Group",
+					"VpcId" : { "Fn::FindInMap" : [ "VPCIdsMaps", { "Ref" : "Environment" }, "VPC" ]},
+					"SecurityGroupIngress" : [{"IpProtocol" : "TCP", "FromPort" : "3306", "ToPort" : "3306", "CidrIp" : "10.0.0.0/8"},
+								  {"IpProtocol" : "TCP", "FromPort" : "3306", "ToPort" : "3306", "CidrIp" : { "Fn::FindInMap" : [ "VPCIPRange", { "Ref" : "Environment" }, "IP" ]}}],
+					"Tags" : [{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-rds-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+				
+				}
+				
+					
+ 					
+		},
+
+		"RDSParamGroup" : {
+			"Type": "AWS::RDS::DBParameterGroup",
+            		"Properties": {
+			                "Description": "RDS Database Parameter Group",
+			                "Family": "MySQL5.6",
+							"Parameters": {
+								"character_set_client": "utf8",
+								"character_set_connection": "utf8",
+								"character_set_database": "utf8",
+								"character_set_filesystem": "binary",
+								"character_set_results": "utf8",
+								"character_set_server": "utf8",
+								"event_scheduler": "ON",
+								"innodb_file_format": "Barracuda",
+								"innodb_large_prefix": "1",
+								"log_bin_trust_function_creators": "1",
+								"log_queries_not_using_indexes": "1",
+								"long_query_time": "1",
+								"lower_case_table_names": "1",
+								"slow_query_log": "0",
+								"sql_mode": "PIPES_AS_CONCAT"
+								},
+					"Tags" : [{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-e2-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]	      
+			}
+	        },
+		
+		"DBPelicanNewInstance01": {
+			"Type" : "AWS::RDS::DBInstance",
+			"Properties" :
+			{
+				"DBName": "tempestdb",
+				"AllocatedStorage" : "10",
+				"AllowMajorVersionUpgrade" : "false",
+				"AutoMinorVersionUpgrade" : "true",
+				"DBInstanceClass" : "db.r3.large",
+				"AllocatedStorage" : "100",
+				"Iops" : "1000",
+				"Engine" : "MySQL",
+				"EngineVersion" : "5.6.19b",
+				"MasterUsername" : "root",
+				"MasterUserPassword" : { "Ref" : "PelicanDBPassword" },
+				"DBInstanceIdentifier" : { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]},
+				"DBParameterGroupName" : { "Ref": "RDSParamGroup" },
+				"DBSubnetGroupName" : { "Fn::FindInMap" : [ "DBSubnetGroup", { "Ref" : "Environment" }, "SUBNET" ]} ,
+				"LicenseModel" : "general-public-license",
+				"MultiAZ" : "true",
+				"OptionGroupName" : "default:mysql-5-6",
+				"Port" : "3306",
+				"PreferredBackupWindow" : "10:16-10:46",
+				"PreferredMaintenanceWindow" : "fri:13:19-fri:13:49",
+				"PubliclyAccessible" : "false",
+				"Tags" : [{"Key": "workload-type","Value": "other"}, {"Key": "Name", "Value":  { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]} }],
+				"VPCSecurityGroups" : [{ "Ref" : "RDSSecurityGroup" }]
+			}
+		},
+		
+		"ReplicaDB" : {
+		      "Type" : "AWS::RDS::DBInstance",
+			  "Condition" : "IsNotDev",
+		      "Properties" : {
+			        "SourceDBInstanceIdentifier" : { "Ref" : "DBPelicanNewInstance01" },
+					"DBInstanceIdentifier" : { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ]}, "-Report"]]},
+					"Tags" : [{ "Key"  : "Name", "Value" :  { "Fn::Join" : [ "", ["pelican-report-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]} }]
+      		      }
+   		 },
+		 
+		 "TriggersDB" : {
+			"Type" : "AWS::RDS::DBInstance",
+				"Properties": {
+					"DBName": "workers",
+					"Engine" : "MySQL",
+					"EngineVersion" : "5.6.19b",
+					"AllocatedStorage" : "100",
+					"Iops" : "1000",
+					"AllowMajorVersionUpgrade": "false",
+					"AutoMinorVersionUpgrade": "true",
+					"DBInstanceClass" : "db.r3.large",
+					"DBInstanceIdentifier" : { "Fn::Join" : [ "", ["triggers-workers-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]},
+					"DBParameterGroupName" : { "Ref" : "RDSParamGroup" },
+					"OptionGroupName" : "default:mysql-5-6",
+					"DBSubnetGroupName" : { "Fn::FindInMap" : [ "DBSubnetGroup", { "Ref" : "Environment" }, "SUBNET" ]} ,
+					"MultiAZ" : "true",
+					"Port" : "3306",
+					"PubliclyAccessible" : "false",
+					"VPCSecurityGroups" : [{ "Ref" : "RDSSecurityGroup" }],
+					"MasterUsername" : "root",
+					"MasterUserPassword" : { "Ref" : "TriggersDBPassword" },
+					"LicenseModel" : "general-public-license",
+					"PreferredBackupWindow" : "06:16-06:46",
+					"PreferredMaintenanceWindow" : "tue:13:19-tue:13:49",
+					"Tags" : [{ "Key"  : "Name", "Value" :  { "Fn::Join" : [ "", ["triggers-workers-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]} }]
+				}
+		 },
+		 
+		 "LoggerDB" : {
+			"Type" : "AWS::RDS::DBInstance",
+				"Properties": {
+					"DBName": "pelicanlogs",
+					"Engine" : "MySQL",
+					"EngineVersion" : "5.6.21",
+					"LicenseModel" : "general-public-license",
+					"AllocatedStorage" : "150",
+					"Iops" : "1000",
+					"AllowMajorVersionUpgrade": "false",
+					"AutoMinorVersionUpgrade": "true",
+					"DBInstanceClass" : "db.r3.large",
+					"DBInstanceIdentifier" : { "Fn::Join" : [ "", ["pelican-loggers-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]},
+					"DBParameterGroupName" : "default.mysql5.6",
+					"OptionGroupName" : "default:mysql-5-6",
+					"DBSubnetGroupName" : { "Fn::FindInMap" : [ "DBSubnetGroup", { "Ref" : "Environment" }, "SUBNET" ]} ,
+					"MultiAZ" : "false",
+					"Port" : "3306",
+					"PubliclyAccessible" : "false",
+					"VPCSecurityGroups" : [{ "Ref" : "RDSSecurityGroup" }],
+					"MasterUsername" : "root",
+					"MasterUserPassword" : { "Ref" : "LoggersDBPassword" },
+					"PreferredBackupWindow" : "03:16-03:46",
+					"PreferredMaintenanceWindow" : "thu:13:19-thu:13:49",
+					"Tags" : [{ "Key"  : "Name", "Value" :  { "Fn::Join" : [ "", ["pelican-logger-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]} }]
+				}
+		 }
+ 
+	},
+	"Description": "Template to create Pelican, Report and Logger DBs."
+}

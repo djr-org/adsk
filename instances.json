@@ -1,0 +1,601 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Parameters" : {
+		"Environment" : {
+			"Description" : "The environment to create. Possible values: DEV, STG, PRD, QA",
+			"Type" : "String",
+			"MinLength" : "2",
+			"MaxLength" : "3",
+			"AllowedValues" : ["DEV", "STG", "PRD", "QA"]
+		},
+
+		"AMI" : {
+			"Description" : "The AMI to use to create EC2 instances",
+			"Type" : "String",
+			"MinLength" : "1",
+			"MaxLength" : "15"
+		}
+	},
+	"Conditions" : {
+		"IsNotDev" : {"Fn::Not" : [{ "Fn::Equals" : [ {"Ref" : "Environment"}, "DEV" ]	}]},
+		"IsPrd" : { "Fn::Equals" : [ {"Ref" : "Environment"}, "PRD" ]	}
+	},
+
+	"Mappings" : {
+		"EnvNameSmallCaseMap" : {
+			"DEV" : {
+				"Env" : "dev"
+			},
+			"QA" : {
+				"Env" : "qa"
+			},
+			"STG" : {
+				"Env" : "stg"
+			},
+			"PRD" : {
+				"Env" : "prd"
+			}
+		},
+		
+		"EnvNamecertMap" : {
+			"DEV" : {
+				"Env" : "dev"
+			},
+			"QA" : {
+				"Env" : "dev"
+			},
+			"STG" : {
+				"Env" : "stg"
+			},
+			"PRD" : {
+				"Env" : "prd"
+			}
+		},
+		
+		"ELBSubnetsMap" : {
+			"DEV" : {
+				"ELBSubnetsE" : ["subnet-e7a90182","subnet-06749d5f"],
+				"ELBSubnetsI" : ["subnet-07749d5e","subnet-e4a90181"]
+			},
+			"QA" : {
+				"ELBSubnetsE" : ["subnet-e7a90182","subnet-06749d5f"],
+				"ELBSubnetsI" : ["subnet-07749d5e","subnet-e4a90181"]
+			},
+			"STG" : {
+				"ELBSubnetsI" : ["subnet-454da41c","subnet-2ea0084b"],
+				"ELBSubnetsE" : ["subnet-474da41e","subnet-29a0084c"]
+			},
+			"PRD" : {
+				"ELBSubnetsI" : ["subnet-1a331a5c","subnet-ee0ee08b"],
+				"ELBSubnetsE" : ["subnet-1f331a59","subnet-e90ee08c"]
+			}
+		},
+	
+		"VPCIdsMaps" : {
+			"DEV" : {
+				"VPC" : "vpc-42479327"
+			},
+			"QA" : {
+				"VPC" : "vpc-42479327"
+			},
+			"STG" : {
+				"VPC" : "vpc-f5439790"
+			},
+			"PRD" : {
+				"VPC" : "vpc-4a90752f"
+			}
+		},
+
+		"InstanceSubnetsMap" : {
+			"DEV" : {
+				"SubnetId1" : "subnet-05749d5c",
+				"SubnetId2" : "subnet-e5a90180"
+			},
+			"QA" : {
+				"SubnetId1" : "subnet-05749d5c",
+				"SubnetId2" : "subnet-e5a90180"
+			},			
+			"STG" : {
+				"SubnetId1" : "subnet-2ca00849",
+				"SubnetId2" : "subnet-464da41f"
+			},
+			"PRD" : {
+				"SubnetId1" : "subnet-1c331a5a",
+				"SubnetId2" : "subnet-1c331a5a"
+			}
+		},
+
+		"VPCIPRange" : {
+			"DEV" : {
+				"IP" : "10.37.54.0/24"
+			},
+			"QA" : {
+				"IP" : "10.37.54.0/24"
+			},			
+			"STG" : {
+				"IP" : "10.37.55.0/24"
+			},
+			"PRD" : {
+				"IP" : "10.40.64.0/24"
+			}
+		}
+	},
+
+	"Resources": {
+		
+		"ELBSecurityGroup" : {
+  			"Type" : "AWS::EC2::SecurityGroup",
+			   "Properties" : {
+				    "GroupDescription" : "ELB Security Group",
+					"VpcId" : { "Fn::FindInMap" : [ "VPCIdsMaps", { "Ref" : "Environment" }, "VPC" ]},
+					"SecurityGroupIngress" : [{"IpProtocol" : "TCP", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+								  {"IpProtocol" : "TCP", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0"}],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-platform-elb-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			    }
+			},
+		
+		"InstanceSecurityGroup" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			   "Properties" : {
+				    "GroupDescription" : "Pelican Instances Security Group",
+					"VpcId" : { "Fn::FindInMap" : [ "VPCIdsMaps", { "Ref" : "Environment" }, "VPC" ]},
+					"SecurityGroupIngress" : [{"IpProtocol" : "TCP", "FromPort" : "8080", "ToPort" : "8080", "CidrIp" : { "Fn::FindInMap" : [ "VPCIPRange", { "Ref" : "Environment" }, "IP" ]}},
+								  {"IpProtocol" : "TCP", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Fn::FindInMap" : [ "VPCIPRange", { "Ref" : "Environment" }, "IP" ]}},
+								  {"IpProtocol" : "TCP", "FromPort" : "4118-4122", "ToPort" : "4118-4122", "CidrIp" : "10.37.252.0/24, 10.37.253.0/24"}],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-platform-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			    }
+		},
+
+		"elbPelicanDevExternalApi": {
+			"Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties": {
+				"LoadBalancerName": { "Fn::Join" : ["", ["adsk-pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-lb-api"]]},
+				"Subnets": { "Fn::FindInMap" : [ "ELBSubnetsMap", { "Ref" : "Environment" }, "ELBSubnetsE" ]},
+				"Scheme" : "internet-facing",
+				"CrossZone" : "true",
+				"HealthCheck": {
+					"Target": "HTTP:8080/tfel2rs/doc/v2/",
+					"Timeout": "5",
+					"Interval": "30",
+					"UnhealthyThreshold": "2",
+					"HealthyThreshold": "3"
+				},
+				"Instances": { "Fn::If" : ["IsNotDev",[{"Ref": "EC2PelicanNewInstance01"},{"Ref": "EC2PelicanNewInstance02"},{"Ref": "EC2PelicanNewInstance03"},{"Ref": "EC2PelicanNewInstance04"}],[{"Ref": "EC2PelicanNewInstance01"}]]},
+				"SecurityGroups": [{ "Ref": "ELBSecurityGroup" }],
+				"Listeners": [
+					{
+						"Protocol": "HTTP",
+						"LoadBalancerPort": "80",
+						"InstanceProtocol": "HTTP",
+						"InstancePort": "8080"
+					},
+					{
+						"Protocol": "HTTPS",
+						"LoadBalancerPort": "443",
+						"InstancePort": "80",
+						"SSLCertificateId" : {
+							"Fn::Join":[ "", [ "arn:aws:iam::",{"Ref":"AWS::AccountId"},":server-certificate/", "PelicanAPI",{ "Fn::FindInMap" : [ "EnvNamecertMap", { "Ref" : "Environment" }, "Env" ] } ]] }
+					}
+				],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["adsk-pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			}
+		},
+		"elbPelicanDevInternalApi": {
+			"Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties": {
+				"LoadBalancerName": { "Fn::Join" : ["", ["adsk-pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-api"]]},
+				"Subnets": { "Fn::FindInMap" : [ "ELBSubnetsMap", { "Ref" : "Environment" }, "ELBSubnetsI" ]},
+				"Scheme" : "internal",
+				"CrossZone" : "true",
+				"HealthCheck": {
+					"Target": "HTTP:8080/tfel2rs/doc/v2/",
+					"Timeout": "5",
+					"Interval": "6",
+					"UnhealthyThreshold": "2",
+					"HealthyThreshold": "3"
+				},
+				"Instances": { "Fn::If" : ["IsNotDev",[{"Ref": "EC2PelicanNewInstance01"},{"Ref": "EC2PelicanNewInstance02"},{"Ref": "EC2PelicanNewInstance03"},{"Ref": "EC2PelicanNewInstance04"}],[{"Ref": "EC2PelicanNewInstance01"}]]},
+				"SecurityGroups": [{ "Ref": "ELBSecurityGroup" }],
+				"Listeners": [
+					{
+						"Protocol": "HTTP",
+						"LoadBalancerPort": "80",
+						"InstanceProtocol": "HTTP",
+						"InstancePort": "8080"
+					},
+					{
+						"Protocol": "HTTPS",
+						"LoadBalancerPort": "443",
+						"InstancePort": "80",
+						"SSLCertificateId" : {
+							"Fn::Join":[ "", [ "arn:aws:iam::",{"Ref":"AWS::AccountId"},":server-certificate/", "PelicanAPIInt",{ "Fn::FindInMap" : [ "EnvNamecertMap", { "Ref" : "Environment" }, "Env" ] } ]] }
+					}
+				],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["adsk-pelican-api-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			}
+		},
+		"elbPelicanDevInternalAt": {
+			"Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties": {
+				"LoadBalancerName": { "Fn::Join" : ["", ["adsk-pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-at"]]},
+				"Subnets": { "Fn::FindInMap" : [ "ELBSubnetsMap", { "Ref" : "Environment" }, "ELBSubnetsI" ]},
+				"Scheme" : "internal",
+				"CrossZone" : "true",
+				"HealthCheck": {
+					"Target": "HTTP:8080/tfel2rs/doc/v2/",
+					"Timeout": "5",
+					"Interval": "6",
+					"UnhealthyThreshold": "2",
+					"HealthyThreshold": "3"
+				},
+				"Instances": { "Fn::If" : ["IsNotDev",[{"Ref": "EC2PelicanNewInstance01"},{"Ref": "EC2PelicanNewInstance02"}],[{"Ref": "EC2PelicanNewInstance01"}]]},
+				"SecurityGroups": [{ "Ref": "ELBSecurityGroup" }],
+				"Listeners": [
+					{
+						"Protocol": "HTTP",
+						"LoadBalancerPort": "80",
+						"InstanceProtocol": "HTTP",
+						"InstancePort": "8080"
+					},
+					{
+						"Protocol": "HTTPS",
+						"LoadBalancerPort": "443",
+						"InstancePort": "80",
+						"SSLCertificateId" : {
+							"Fn::Join":[ "", [ "arn:aws:iam::",{"Ref":"AWS::AccountId"},":server-certificate/", "PelicanATInt",{ "Fn::FindInMap" : [ "EnvNamecertMap", { "Ref" : "Environment" }, "Env" ] } ]] }
+					}
+				],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["adsk-pelican-at-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			}
+		},
+		
+		"elbPelicanInternalReport": {
+			"Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Condition" : "IsNotDev",
+			"Properties": {
+				"LoadBalancerName": { "Fn::Join" : ["", ["adsk-report-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] } ]]},
+				"Subnets": { "Fn::FindInMap" : [ "ELBSubnetsMap", { "Ref" : "Environment" }, "ELBSubnetsI" ]},
+				"Scheme" : "internal",
+				"CrossZone" : "true",
+				"HealthCheck": {
+					"Target": "HTTP:8080/tfel2rs/doc/v2/",
+					"Timeout": "3",
+					"Interval": "5",
+					"UnhealthyThreshold": "2",
+					"HealthyThreshold": "3"
+				},
+				"Instances": [{ "Ref" : "EC2PelicanReport" }],
+				"SecurityGroups": [{ "Ref": "ELBSecurityGroup" }],
+				"Listeners": [
+					{
+						"Protocol": "HTTP",
+						"LoadBalancerPort": "80",
+						"InstanceProtocol": "HTTP",
+						"InstancePort": "8080"
+					},
+					{
+						"Protocol": "HTTPS",
+						"LoadBalancerPort": "443",
+						"InstancePort": "80",
+						"SSLCertificateId" : {
+							"Fn::Join":[ "", [ "arn:aws:iam::",{"Ref":"AWS::AccountId"},":server-certificate/", "PelicanReportInt",{ "Fn::FindInMap" : [ "EnvNamecertMap", { "Ref" : "Environment" }, "Env" ] } ]] }
+					}
+				],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["adsk-report-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			}
+		},
+		
+		"elbLoggerInternal": {
+			"Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties": {
+				"LoadBalancerName": { "Fn::Join" : ["", ["adsk-logger-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]},
+				"Subnets": { "Fn::FindInMap" : [ "ELBSubnetsMap", { "Ref" : "Environment" }, "ELBSubnetsI" ]},
+				"Scheme" : "internal",
+				"CrossZone" : "true",
+				"HealthCheck": {
+					"Target": "HTTP:8080/pelicanlog/index.html",
+					"Timeout": "3",
+					"Interval": "5",
+					"UnhealthyThreshold": "2",
+					"HealthyThreshold": "3"
+				},
+				"Instances": { "Fn::If" : ["IsPrd",[{"Ref": "EC2LoggerInstance01"},{"Ref": "EC2LoggerInstance02"}],[{"Ref" : "EC2LoggerInstance01"}]]},
+				"SecurityGroups": [{ "Ref": "ELBSecurityGroup" }],
+				"Listeners": [
+					{
+						"Protocol": "HTTP",
+						"LoadBalancerPort": "80",
+						"InstanceProtocol": "HTTP",
+						"InstancePort": "8080"
+					}
+				],
+					"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["adsk-logger-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }]]}
+					}]
+			}
+		},
+		
+
+		"EC2PelicanNewInstance01": {
+			"Type": "AWS::EC2::Instance",
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "adsk-pelican-profile-ec2",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "c3.xlarge",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId1" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+ 								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Platform\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-01"]]}
+					}
+				]
+			}
+		},
+		"EC2PelicanNewInstance02": {
+			"Type": "AWS::EC2::Instance",
+			"Condition" : "IsNotDev",
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "adsk-pelican-profile-ec2",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "c3.xlarge",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId2" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+ 								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Platform\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-02"]]}
+					}
+				]
+			}
+		},
+	
+		"EC2PelicanNewInstance03": {
+			"Type": "AWS::EC2::Instance",
+			"Condition" : "IsNotDev",
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "adsk-pelican-profile-ec2",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "c3.xlarge",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId2" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+  								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Platform\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-03"]]}
+					}
+				]
+			}
+		},
+	
+		"EC2PelicanNewInstance04": {
+			"Type": "AWS::EC2::Instance",
+			"Condition" : "IsNotDev",
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "adsk-pelican-profile-ec2",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "c3.xlarge",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId2" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+  								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Platform\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] }, "-04"]]}
+					}
+				]
+			}
+		},
+		
+		"EC2PelicanReport": {
+			"Type": "AWS::EC2::Instance",
+			"DependsOn" : [ "EC2PelicanNewInstance01","EC2PelicanNewInstance02","EC2PelicanNewInstance03","EC2PelicanNewInstance04"], 
+			"Condition" : "IsNotDev",
+			"Condition" : "IsNotQa",
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "adsk-pelican-profile-ec2",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "c3.xlarge",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId2" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+ 								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Reports\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-report-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] },"-01"]]}
+					}
+				]
+			}
+		},
+
+		"EC2LoggerInstance01": {
+			"Type": "AWS::EC2::Instance",
+			"DependsOn" : [ "EC2PelicanNewInstance01","EC2PelicanNewInstance02","EC2PelicanNewInstance03","EC2PelicanNewInstance04"],
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "m3.large",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId2" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+ 								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Loggers\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-api-logger-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] },"-01"]]}
+					}
+				]
+			}
+		},
+
+		"EC2LoggerInstance02": {
+			"Type": "AWS::EC2::Instance",
+			"Condition" : "IsPrd",
+			"Properties": {
+				"DisableApiTermination": "FALSE",
+				"IamInstanceProfile": "",
+				"ImageId": { "Ref" : "AMI" },
+				"InstanceType": "m3.large",
+				"Monitoring": "true",
+				"KeyName" : "adsk-eis-pelican-app",
+				"SubnetId": { "Fn::FindInMap" : [ "InstanceSubnetsMap", { "Ref" : "Environment" }, "SubnetId2" ] },
+				"SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" }],
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50" }
+				}],
+				 "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+ 								"#!/bin/bash -ex\n",
+                                "wget https://s3-us-west-1.amazonaws.com/pelican-kickstart/pelican-bootstrap.sh ; bash pelican-bootstrap.sh ", { "Ref" : "Environment" }," "," Loggers\n"
+                            ]
+                        ]
+                    }
+                },
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": { "Fn::Join" : [ "", ["pelican-api-logger-", { "Fn::FindInMap" : [ "EnvNameSmallCaseMap", { "Ref" : "Environment" }, "Env" ] },"-02"]]}
+					}
+				]
+			}
+		}				
+		
+	},
+
+
+	"Description": "Template to create Pelican Platform, Loggers and Reports Application Environment."
+}
