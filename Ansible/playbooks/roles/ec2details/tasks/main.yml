@@ -1,0 +1,4 @@
+---
+
+ - name: Ec2 details
+   shell: ./roles/ec2details/tasks/ec2details.sh '{{region}}' '{{accounts}}'

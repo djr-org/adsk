@@ -1,0 +1,5 @@
+---
+
+ - name: Ec2 start stop script
+   shell: ./roles/ec2startstop/tasks/ec2startstop.sh '{{SilenceTime}}'  '{{region}}' '{{action}}' '{{item}}'
+   with_items: '{{accounts}}'

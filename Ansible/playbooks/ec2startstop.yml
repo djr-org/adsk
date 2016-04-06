@@ -1,0 +1,6 @@
+---
+- hosts: awsec2startstop
+  connection: local
+
+  roles:
+      - ec2startstop
